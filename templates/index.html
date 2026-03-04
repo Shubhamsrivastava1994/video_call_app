@@ -1,170 +1,3 @@
-<!DOCTYPE html>
-<html lang="hi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Video Call</title>
-
-<style>
-
-:root{
---bg:#0a0a0a;
---accent:#2563eb;
---danger:#ff4757;
---glass:rgba(255,255,255,0.1);
-}
-
-body{
-margin:0;
-font-family:Arial;
-background:var(--bg);
-color:white;
-height:100vh;
-display:flex;
-justify-content:center;
-align-items:center;
-}
-
-/* join screen */
-
-#joinScreen{
-width:85%;
-max-width:400px;
-padding:30px;
-background:rgba(30,30,30,0.8);
-border-radius:20px;
-text-align:center;
-}
-
-input{
-width:100%;
-padding:15px;
-border-radius:10px;
-border:1px solid var(--glass);
-background:#000;
-color:white;
-margin-top:10px;
-}
-
-button{
-padding:15px;
-border:none;
-border-radius:10px;
-cursor:pointer;
-}
-
-#joinBtn{
-width:100%;
-background:var(--accent);
-color:white;
-margin-top:15px;
-}
-
-/* video */
-
-#videoContainer{
-display:none;
-position:relative;
-width:100%;
-height:100%;
-background:black;
-}
-
-#remoteVideo{
-width:100%;
-height:100%;
-object-fit:cover;
-}
-
-#localVideo{
-position:absolute;
-top:20px;
-right:20px;
-width:120px;
-height:160px;
-border-radius:10px;
-object-fit:cover;
-border:2px solid var(--glass);
-}
-
-/* controls */
-
-#controls{
-position:absolute;
-bottom:30px;
-left:50%;
-transform:translateX(-50%);
-display:flex;
-gap:15px;
-background:rgba(0,0,0,0.6);
-padding:15px 20px;
-border-radius:50px;
-}
-
-.control-btn{
-width:55px;
-height:55px;
-border-radius:50%;
-background:var(--glass);
-color:white;
-font-size:20px;
-}
-
-.leave{
-background:var(--danger);
-}
-
-#topBar{
-position:absolute;
-top:10px;
-left:50%;
-transform:translateX(-50%);
-background:rgba(0,0,0,0.6);
-padding:8px 15px;
-border-radius:20px;
-font-size:13px;
-}
-
-</style>
-</head>
-
-<body>
-
-<div id="joinScreen">
-
-<h2>Join Video Call</h2>
-
-<input id="roomInput" placeholder="Room ID">
-
-<button id="joinBtn" onclick="joinRoom()">Join Call</button>
-
-</div>
-
-<div id="videoContainer">
-
-<div id="topBar">
-Room: <span id="roomLabel"></span>
-<button onclick="copyLink()">Invite</button>
-</div>
-
-<video id="remoteVideo" autoplay playsinline></video>
-
-<video id="localVideo" autoplay muted playsinline></video>
-
-<div id="controls">
-
-<button class="control-btn" id="muteBtn" onclick="toggleMute()">🎤</button>
-
-<button class="control-btn" id="camBtn" onclick="toggleCamera()">📷</button>
-
-<button class="control-btn" onclick="switchCamera()">🔄</button>
-
-<button class="control-btn leave" onclick="leaveCall()">❌</button>
-
-</div>
-
-</div>
-
 <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 
 <script>
@@ -174,7 +7,6 @@ const socket = io()
 let localStream
 let peerConnection
 let currentRoom
-let currentFacing="user"
 
 const config={
 iceServers:[
@@ -184,51 +16,45 @@ iceServers:[
 
 async function startVideo(){
 
-try{
-
 localStream = await navigator.mediaDevices.getUserMedia({
-video:{facingMode:currentFacing},
+video:true,
 audio:true
 })
 
-document.getElementById("localVideo").srcObject=localStream
+document.getElementById("localVideo").srcObject = localStream
 
-peerConnection=new RTCPeerConnection(config)
+peerConnection = new RTCPeerConnection(config)
 
 localStream.getTracks().forEach(track=>{
 peerConnection.addTrack(track,localStream)
 })
 
-peerConnection.ontrack=e=>{
-document.getElementById("remoteVideo").srcObject=e.streams[0]
+peerConnection.ontrack = event=>{
+document.getElementById("remoteVideo").srcObject = event.streams[0]
 }
 
-peerConnection.onicecandidate=e=>{
-if(e.candidate){
-socket.emit("ice-candidate",e.candidate)
+peerConnection.onicecandidate = event=>{
+if(event.candidate){
+
+socket.emit("ice-candidate",{
+room:currentRoom,
+candidate:event.candidate
+})
+
 }
-}
-
-}catch(err){
-
-alert("Camera permission denied")
-
 }
 
 }
 
 async function joinRoom(){
 
-const room=document.getElementById("roomInput").value
+const room = document.getElementById("roomInput").value
 
-if(!room) return alert("Enter room id")
+if(!room) return alert("Enter Room ID")
 
-currentRoom=room
-
-document.getElementById("roomLabel").innerText=room
+currentRoom = room
 
 document.getElementById("joinScreen").style.display="none"
-
 document.getElementById("videoContainer").style.display="block"
 
 await startVideo()
@@ -237,81 +63,53 @@ socket.emit("join-room",{room:room})
 
 }
 
-/* signaling */
-
 socket.on("user-connected",async()=>{
 
-const offer=await peerConnection.createOffer()
+const offer = await peerConnection.createOffer()
 
 await peerConnection.setLocalDescription(offer)
 
-socket.emit("offer",offer)
+socket.emit("offer",{
+room:currentRoom,
+offer:offer
+})
 
 })
 
-socket.on("offer",async offer=>{
+socket.on("offer",async(offer)=>{
 
 await peerConnection.setRemoteDescription(offer)
 
-const answer=await peerConnection.createAnswer()
+const answer = await peerConnection.createAnswer()
 
 await peerConnection.setLocalDescription(answer)
 
-socket.emit("answer",answer)
+socket.emit("answer",{
+room:currentRoom,
+answer:answer
+})
 
 })
 
-socket.on("answer",async answer=>{
-
+socket.on("answer",async(answer)=>{
 await peerConnection.setRemoteDescription(answer)
-
 })
 
-socket.on("ice-candidate",async candidate=>{
-
+socket.on("ice-candidate",async(candidate)=>{
 await peerConnection.addIceCandidate(candidate)
-
 })
-
-/* controls */
 
 function toggleMute(){
 
-let audio=localStream.getAudioTracks()[0]
-
-audio.enabled=!audio.enabled
-
-document.getElementById("muteBtn").innerText=audio.enabled?"🎤":"🔇"
+localStream.getAudioTracks()[0].enabled =
+!localStream.getAudioTracks()[0].enabled
 
 }
 
 function toggleCamera(){
 
-let video=localStream.getVideoTracks()[0]
-
-video.enabled=!video.enabled
-
-document.getElementById("camBtn").innerText=video.enabled?"📷":"🚫"
-
-}
-
-async function switchCamera(){
-
-currentFacing=currentFacing==="user"?"environment":"user"
-
-localStream.getTracks().forEach(t=>t.stop())
-
-await startVideo()
-
-}
-
-function copyLink(){
-
-const link=location.origin+"?room="+currentRoom
-
-navigator.clipboard.writeText(link)
-
-alert("Invite link copied")
+localStream.getVideoTracks()[0].enabled =
+!localStream.getVideoTracks()[0].enabled
 
 }
 
@@ -322,6 +120,3 @@ location.reload()
 }
 
 </script>
-
-</body>
-</html>
